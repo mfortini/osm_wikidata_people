@@ -260,13 +260,11 @@
 
     function buildOverpassQuery() {
       const areaFilter = geometryToOverpassArea(selectionGeoJSON);
-      return `// Vie con etimologia Wikidata nell'area disegnata
+      return `// Vie con e senza etimologia Wikidata nell'area disegnata
 [out:json][timeout:25];
 (
-  way["highway"]["name"]["name:etymology:wikidata"]${areaFilter};
-  relation["highway"]["name"]["name:etymology:wikidata"]${areaFilter};
-  way["highway"]["name"]["etymology:wikidata"]${areaFilter};
-  relation["highway"]["name"]["etymology:wikidata"]${areaFilter};
+  way["highway"]["name"]${areaFilter};
+  relation["highway"]["name"]${areaFilter};
 );
 out body geom;`;
     }
@@ -443,13 +441,13 @@ SELECT ?item ?itemLabel ?gender ?genderLabel ?birth ?death WHERE {
       }).join("");
     }
 
-    function renderSummary(rows, qidCount, elementCount) {
+    function renderSummary(rows, qidCount, elementCount, distinctStreetsWithWikidata, distinctStreetsWithoutWikidata) {
       const summary = document.getElementById("summary");
       if (!rows.length) {
         summary.textContent = "Nessuna via dedicata a persone trovata.";
         return;
       }
-      summary.textContent = `Elementi Overpass: ${elementCount} · QID unici: ${qidCount} · Vie dedicate a persone: ${rows.length}`;
+      summary.textContent = `Elementi Overpass: ${elementCount} · QID unici: ${qidCount} · Vie dedicate a persone: ${rows.length} · Vie distinte con Wikidata: ${distinctStreetsWithWikidata} · Vie distinte senza Wikidata: ${distinctStreetsWithoutWikidata}`;
     }
 
     function renderMap(features, qidInfo) {
@@ -496,10 +494,19 @@ SELECT ?item ?itemLabel ?gender ?genderLabel ?birth ?death WHERE {
         const elementsCount = (osmData.elements || []).length;
         setStatus(`Overpass OK (${elementsCount} elementi). Converto in GeoJSON...`);
 
+        // Calcola vie distinte senza Wikidata
+        const allElements = osmData.elements || [];
+        const allStreetNames = new Set();
+        allElements.forEach(el => {
+          if (el.tags && el.tags.name && el.tags.highway) {
+            allStreetNames.add(el.tags.name);
+          }
+        });
+
         const features = extractFeatures(osmData);
         if (!features.length) {
           resultsDiv.innerHTML = '<div class="muted">Nessuna via con etimologia Wikidata nell\'area selezionata.</div>';
-          renderSummary([], 0, elementsCount);
+          renderSummary([], 0, elementsCount, 0, allStreetNames.size);
           setStatus("Finito.");
           btn.disabled = false;
           return;
@@ -535,7 +542,20 @@ SELECT ?item ?itemLabel ?gender ?genderLabel ?birth ?death WHERE {
         });
 
         const deduped = dedupeRows(rows);
-        renderSummary(deduped, qidSet.size, elementsCount);
+
+        // Calcola vie distinte con Wikidata
+        const streetsWithWikidata = new Set();
+        features.forEach(f => {
+          const tags = f.properties && (f.properties.tags || f.properties);
+          if (tags && tags.name) {
+            streetsWithWikidata.add(tags.name);
+          }
+        });
+
+        // Calcola vie distinte senza Wikidata
+        const streetsWithoutWikidata = allStreetNames.size - streetsWithWikidata.size;
+
+        renderSummary(deduped, qidSet.size, elementsCount, streetsWithWikidata.size, streetsWithoutWikidata);
         renderResults(deduped);
         renderMap(features, qidInfo);
         setStatus("Finito.");
