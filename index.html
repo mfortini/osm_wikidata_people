@@ -187,22 +187,87 @@
     function parseHashView() {
       const hash = window.location.hash.replace("#", "");
       if (!hash) return null;
-      const parts = hash.split(",");
-      if (parts.length !== 3) return null;
-      const [lat, lng, zoom] = parts.map(Number);
-      if ([lat, lng, zoom].some(n => Number.isNaN(n))) return null;
-      return { lat, lng, zoom };
+
+      // Cerca se c'è un poligono nell'hash (formato: lat,lng,zoom&poly=...)
+      let viewPart = hash;
+      let polyPart = null;
+      if (hash.includes("&poly=")) {
+        const parts = hash.split("&poly=");
+        viewPart = parts[0];
+        polyPart = parts[1];
+      }
+
+      // Parse della vista
+      const viewParts = viewPart.split(",");
+      let view = null;
+      if (viewParts.length === 3) {
+        const [lat, lng, zoom] = viewParts.map(Number);
+        if (![lat, lng, zoom].some(n => Number.isNaN(n))) {
+          view = { lat, lng, zoom };
+        }
+      }
+
+      // Parse del poligono
+      let polygon = null;
+      if (polyPart) {
+        try {
+          const coords = polyPart.split(";").map(pair => {
+            const [lat, lng] = pair.split(",").map(Number);
+            return [lng, lat]; // GeoJSON usa [lng, lat]
+          });
+          if (coords.length >= 3) {
+            // Chiudi il poligono se non è già chiuso
+            if (coords[0][0] !== coords[coords.length - 1][0] ||
+                coords[0][1] !== coords[coords.length - 1][1]) {
+              coords.push([...coords[0]]);
+            }
+            polygon = {
+              type: "Feature",
+              geometry: {
+                type: "Polygon",
+                coordinates: [coords]
+              },
+              properties: {}
+            };
+          }
+        } catch (e) {
+          console.warn("Errore nel parsing del poligono dall'URL:", e);
+        }
+      }
+
+      return { view, polygon };
     }
 
-    function updateHashFromMap(map) {
+    function encodePolygonForHash(geojson) {
+      if (!geojson || !geojson.geometry || geojson.geometry.type !== "Polygon") {
+        return null;
+      }
+      const coords = geojson.geometry.coordinates[0];
+      // Codifica come lat,lng;lat,lng;... (arrotonda a 5 decimali)
+      return coords.slice(0, -1).map(([lng, lat]) =>
+        `${lat.toFixed(5)},${lng.toFixed(5)}`
+      ).join(";");
+    }
+
+    function updateHashFromMap(map, polygon = null) {
       const c = map.getCenter();
       const zoom = map.getZoom();
       const lat = c.lat.toFixed(5);
       const lng = c.lng.toFixed(5);
-      window.location.hash = `${lat},${lng},${zoom}`;
+      let hash = `${lat},${lng},${zoom}`;
+
+      // Aggiungi il poligono se presente
+      const polyStr = encodePolygonForHash(polygon);
+      if (polyStr) {
+        hash += `&poly=${polyStr}`;
+      }
+
+      window.location.hash = hash;
     }
 
-    const initialView = parseHashView() || { lat: 41.9028, lng: 12.4964, zoom: 12 };
+    const hashData = parseHashView();
+    const initialView = hashData?.view || { lat: 41.9028, lng: 12.4964, zoom: 12 };
+    const initialPolygon = hashData?.polygon || null;
     const map = L.map("map", { preferCanvas: true }).setView([initialView.lat, initialView.lng], initialView.zoom);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -232,15 +297,28 @@
       selectionGeoJSON = e.layer.toGeoJSON();
       map.fitBounds(e.layer.getBounds().pad(0.1));
       updateQueryPreview();
+      updateHashFromMap(map, selectionGeoJSON);
     });
 
-    map.on("moveend", () => updateHashFromMap(map));
+    map.on("moveend", () => updateHashFromMap(map, selectionGeoJSON));
+
+    // Carica il poligono dall'URL se presente
+    if (initialPolygon) {
+      const layer = L.geoJSON(initialPolygon);
+      drawnItems.addLayer(layer.getLayers()[0]);
+      selectionGeoJSON = initialPolygon;
+      map.fitBounds(layer.getBounds().pad(0.1));
+      updateQueryPreview();
+      // Esegui automaticamente la ricerca
+      setTimeout(() => runSearch(), 500);
+    }
 
     document.getElementById("clearSelection").addEventListener("click", () => {
       drawnItems.clearLayers();
       selectionGeoJSON = null;
       document.getElementById("overpassQuery").value = "";
       setStatus("Selezione rimossa.");
+      updateHashFromMap(map, null);
     });
 
     document.getElementById("runBtn").addEventListener("click", runSearch);
@@ -261,7 +339,7 @@
     function buildOverpassQuery() {
       const areaFilter = geometryToOverpassArea(selectionGeoJSON);
       return `// Vie con e senza etimologia Wikidata nell'area disegnata
-[out:json][timeout:25];
+[out:json][timeout:50];
 (
   way["highway"]["name"]${areaFilter};
   relation["highway"]["name"]${areaFilter};
