@@ -148,6 +148,10 @@
       <a href="javascript:history.back()" class="back-link">← Torna alla mappa</a>
       <div id="loading" class="loading">Caricamento dati da Wikidata...</div>
     </div>
+    <div style="margin-top:1.5rem; text-align:center; font-size: 0.9rem;">
+      <a href="https://github.com/mfortini/osm_wikidata_people" target="_blank"
+        style="color:var(--muted); text-decoration:none;">Source code on GitHub</a>
+    </div>
   </div>
 
   <script>
@@ -162,7 +166,7 @@
       if (!qid || !/^Q\d+$/.test(qid)) throw new Error("QID non valido o mancante.");
 
       const query = `
-      SELECT ?itemLabel ?description ?birthDate ?birthPlaceLabel ?deathDate ?deathPlaceLabel ?image (GROUP_CONCAT(DISTINCT ?alias; separator=", ") AS ?aliases) ?professionLabel WHERE {
+      SELECT ?itemLabel ?itemDescription ?birthDate ?birthPlaceLabel ?deathDate ?deathPlaceLabel ?image (GROUP_CONCAT(DISTINCT ?alias; separator=", ") AS ?aliases) ?professionLabel WHERE {
         VALUES ?item { wd:${qid} }
         
         OPTIONAL { ?item wdt:P569 ?birthDate. }
@@ -175,7 +179,7 @@
         
         SERVICE wikibase:label { bd:serviceParam wikibase:language "it,en,mul". }
       }
-      GROUP BY ?item ?itemLabel ?description ?birthDate ?birthPlaceLabel ?deathDate ?deathPlaceLabel ?image ?professionLabel
+      GROUP BY ?item ?itemLabel ?itemDescription ?birthDate ?birthPlaceLabel ?deathDate ?deathPlaceLabel ?image ?professionLabel
       LIMIT 1
     `;
 
@@ -200,7 +204,7 @@
       const queryUrl = "https://query.wikidata.org/#" + encodeURIComponent(result.query);
       const label = data.itemLabel ? data.itemLabel.value : qid;
       const aliases = data.aliases ? data.aliases.value : "";
-      const description = data.description ? data.description.value : "";
+      const description = data.itemDescription ? data.itemDescription.value : "";
       const birthDate = formatDate(data.birthDate ? data.birthDate.value : null);
       const birthPlace = data.birthPlaceLabel ? data.birthPlaceLabel.value : "";
       const deathDate = formatDate(data.deathDate ? data.deathDate.value : null);
