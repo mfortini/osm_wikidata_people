@@ -162,7 +162,7 @@
       if (!qid || !/^Q\d+$/.test(qid)) throw new Error("QID non valido o mancante.");
 
       const query = `
-      SELECT ?label ?description ?birthDate ?birthPlaceLabel ?deathDate ?deathPlaceLabel ?image (GROUP_CONCAT(DISTINCT ?alias; separator=", ") AS ?aliases) ?professionLabel WHERE {
+      SELECT ?itemLabel ?description ?birthDate ?birthPlaceLabel ?deathDate ?deathPlaceLabel ?image (GROUP_CONCAT(DISTINCT ?alias; separator=", ") AS ?aliases) ?professionLabel WHERE {
         VALUES ?item { wd:${qid} }
         
         OPTIONAL { ?item wdt:P569 ?birthDate. }
@@ -175,7 +175,7 @@
         
         SERVICE wikibase:label { bd:serviceParam wikibase:language "it,en,mul". }
       }
-      GROUP BY ?item ?label ?description ?birthDate ?birthPlaceLabel ?deathDate ?deathPlaceLabel ?image ?professionLabel
+      GROUP BY ?item ?itemLabel ?description ?birthDate ?birthPlaceLabel ?deathDate ?deathPlaceLabel ?image ?professionLabel
       LIMIT 1
     `;
 
@@ -196,7 +196,7 @@
     }
 
     function render(data, qid) {
-      const label = data.label ? data.label.value : qid;
+      const label = data.itemLabel ? data.itemLabel.value : qid;
       const aliases = data.aliases ? data.aliases.value : "";
       const description = data.description ? data.description.value : "";
       const birthDate = formatDate(data.birthDate ? data.birthDate.value : null);
