@@ -184,7 +184,7 @@
       if (!res.ok) throw new Error("Errore Wikidata: " + res.status);
       const json = await res.json();
       if (!json.results.bindings.length) throw new Error("Nessun dato trovato per questo QID.");
-      return json.results.bindings[0];
+      return { data: json.results.bindings[0], query };
     }
 
     function formatDate(isoString) {
@@ -195,7 +195,9 @@
       } catch (e) { return isoString; }
     }
 
-    function render(data, qid) {
+    function render(result, qid) {
+      const data = result.data;
+      const queryUrl = "https://query.wikidata.org/#" + encodeURIComponent(result.query);
       const label = data.itemLabel ? data.itemLabel.value : qid;
       const aliases = data.aliases ? data.aliases.value : "";
       const description = data.description ? data.description.value : "";
@@ -240,7 +242,8 @@
       </div>` : ""}
 
       <div style="margin-top: 2rem; text-align: center;">
-        <a href="https://www.wikidata.org/wiki/${qid}" target="_blank" style="color:var(--muted); font-size: 0.9rem;">Vedi su Wikidata ↗</a>
+        <a href="https://www.wikidata.org/wiki/${qid}" target="_blank" style="color:var(--muted); font-size: 0.9rem; margin-right: 1rem;">Vedi su Wikidata ↗</a>
+        <a href="${queryUrl}" target="_blank" style="color:var(--muted); font-size: 0.9rem;">Vedi query SPARQL ↗</a>
       </div>
     `;
 
@@ -250,7 +253,7 @@
     const qid = getQid();
     if (qid) {
       fetchPersonData(qid)
-        .then(data => render(data, qid))
+        .then(result => render(result, qid))
         .catch(err => {
           document.getElementById("content").innerHTML = `<div class="error">Errore: ${err.message}<br><br><a href="index.html">Torna alla home</a></div>`;
         });
