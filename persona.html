@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Dettagli Persona - Wikidata Roads</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      --bg: #f4f4f6;
+      --card: #ffffff;
+      --text: #1f2933;
+      --muted: #6b7280;
+      --accent: #1459ff;
+      --border: #e5e7eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+      margin: 0;
+      padding: 1.5rem;
+      background: radial-gradient(circle at 10% 20%, #eef2ff 0, #eef2ff 18%, transparent 22%), radial-gradient(circle at 80% 10%, #fff7ed 0, #fff7ed 18%, transparent 24%), var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .container {
+      width: 100%;
+      max-width: 600px;
+    }
+    .card {
+      background: var(--card);
+      padding: 2rem;
+      border-radius: 1rem;
+      box-shadow: 0 10px 30px rgba(17, 24, 39, 0.08);
+      border: 1px solid #ecedf1;
+    }
+    .back-link {
+      display: inline-block;
+      margin-bottom: 1rem;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .back-link:hover { text-decoration: underline; }
+    h1 { margin: 0 0 0.5rem 0; font-size: 2rem; letter-spacing: -0.02em; }
+    .aliases { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
+    .prop-row {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding: 0.8rem 0;
+    }
+    .prop-row:last-child { border-bottom: none; }
+    .prop-label { font-weight: 600; color: var(--muted); flex-shrink: 0; width: 40%; }
+    .prop-value { text-align: right; width: 60%; }
+    .description {
+      margin: 1.5rem 0;
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: #374151;
+    }
+    .photo-container {
+      margin-top: 1.5rem;
+      border-radius: 0.5rem;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      background: #f9fafb;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+      max-height: 400px;
+      display: block;
+    }
+    .error { color: #d32f2f; text-align: center; margin-top: 2rem; }
+    .loading { text-align: center; color: var(--muted); margin-top: 2rem; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div id="content" class="card">
+    <a href="javascript:history.back()" class="back-link">← Torna alla mappa</a>
+    <div id="loading" class="loading">Caricamento dati da Wikidata...</div>
+  </div>
+</div>
+
+<script>
+  const wikidataSparql = "https://query.wikidata.org/sparql";
+
+  function getQid() {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("qid");
+  }
+
+  async function fetchPersonData(qid) {
+    if (!qid || !/^Q\d+$/.test(qid)) throw new Error("QID non valido o mancante.");
+
+    const query = `
+      SELECT ?label ?description ?birthDate ?birthPlaceLabel ?deathDate ?deathPlaceLabel ?image (GROUP_CONCAT(DISTINCT ?alias; separator=", ") AS ?aliases) ?professionLabel WHERE {
+        VALUES ?item { wd:${qid} }
+        
+        OPTIONAL { ?item wdt:P569 ?birthDate. }
+        OPTIONAL { ?item wdt:P19 ?birthPlace. }
+        OPTIONAL { ?item wdt:P570 ?deathDate. }
+        OPTIONAL { ?item wdt:P20 ?deathPlace. }
+        OPTIONAL { ?item wdt:P18 ?image. }
+        OPTIONAL { ?item wdt:P106 ?profession. }
+        OPTIONAL { ?item skos:altLabel ?alias. FILTER(LANG(?alias) = "it") }
+        
+        SERVICE wikibase:label { bd:serviceParam wikibase:language "it,en,mul". }
+      }
+      GROUP BY ?item ?label ?description ?birthDate ?birthPlaceLabel ?deathDate ?deathPlaceLabel ?image ?professionLabel
+      LIMIT 1
+    `;
+
+    const url = wikidataSparql + "?format=json&query=" + encodeURIComponent(query);
+    const res = await fetch(url, { headers: { "Accept": "application/sparql-results+json" } });
+    if (!res.ok) throw new Error("Errore Wikidata: " + res.status);
+    const json = await res.json();
+    if (!json.results.bindings.length) throw new Error("Nessun dato trovato per questo QID.");
+    return json.results.bindings[0];
+  }
+
+  function formatDate(isoString) {
+    if (!isoString) return "";
+    try {
+        const date = new Date(isoString);
+        return date.toLocaleDateString("it-IT", { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch (e) { return isoString; }
+  }
+
+  function render(data, qid) {
+    const label = data.label ? data.label.value : qid;
+    const aliases = data.aliases ? data.aliases.value : "";
+    const description = data.description ? data.description.value : "";
+    const birthDate = formatDate(data.birthDate ? data.birthDate.value : null);
+    const birthPlace = data.birthPlaceLabel ? data.birthPlaceLabel.value : "";
+    const deathDate = formatDate(data.deathDate ? data.deathDate.value : null);
+    const deathPlace = data.deathPlaceLabel ? data.deathPlaceLabel.value : "";
+    const image = data.image ? data.image.value : null;
+    const profession = data.professionLabel ? data.professionLabel.value : "";
+
+    let html = `
+      <a href="javascript:history.back()" class="back-link">← Torna alla mappa</a>
+      <h1>${label}</h1>
+      ${aliases ? `<div class="aliases">Anche noto come: ${aliases}</div>` : ""}
+      
+      ${description ? `<div class="description">${description}</div>` : ""}
+
+      <div class="props">
+        ${birthDate ? `
+        <div class="prop-row">
+          <span class="prop-label">Nascita</span>
+          <span class="prop-value">${birthDate} ${birthPlace ? `(${birthPlace})` : ""}</span>
+        </div>` : ""}
+        
+        ${deathDate ? `
+        <div class="prop-row">
+          <span class="prop-label">Morte</span>
+          <span class="prop-value">${deathDate} ${deathPlace ? `(${deathPlace})` : ""}</span>
+        </div>` : ""}
+
+        ${profession ? `
+        <div class="prop-row">
+          <span class="prop-label">Professione</span>
+          <span class="prop-value">${profession}</span>
+        </div>` : ""}
+      </div>
+
+      ${image ? `
+      <div class="photo-container">
+        <img src="${image}" alt="Foto di ${label}">
+      </div>` : ""}
+
+      <div style="margin-top: 2rem; text-align: center;">
+        <a href="https://www.wikidata.org/wiki/${qid}" target="_blank" style="color:var(--muted); font-size: 0.9rem;">Vedi su Wikidata ↗</a>
+      </div>
+    `;
+
+    document.getElementById("content").innerHTML = html;
+  }
+
+  const qid = getQid();
+  if (qid) {
+    fetchPersonData(qid)
+      .then(data => render(data, qid))
+      .catch(err => {
+        document.getElementById("content").innerHTML = `<div class="error">Errore: ${err.message}<br><br><a href="index.html">Torna alla home</a></div>`;
+      });
+  } else {
+    document.getElementById("content").innerHTML = `<div class="error">QID mancante nell'URL.<br><br><a href="index.html">Torna alla home</a></div>`;
+  }
+</script>
+
+</body>
+</html>
